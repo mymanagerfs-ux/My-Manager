@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <title>Simple Contact Book (नाम → नंबर, पता)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Roboto, "Segoe UI", Arial; max-width:900px; margin:30px auto; padding:0 16px; color:#111; }
+    h1 { font-size:1.6rem; margin-bottom:6px; }
+    form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+    input[type="text"], input[type="tel"] { padding:8px; border-radius:6px; border:1px solid #ccc; flex:1 1 220px; }
+    textarea { padding:8px; border-radius:6px; border:1px solid #ccc; flex:1 1 100%; min-height:56px; }
+    button { padding:8px 12px; border-radius:8px; border: none; cursor:pointer; background:#0b76ef; color:white; }
+    .row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    .list { margin-top:14px; }
+    .card { border:1px solid #e1e1e1; padding:10px; border-radius:8px; margin-bottom:8px; }
+    .name-link { text-decoration:none; color:#0b76ef; font-weight:600; cursor:pointer; }
+    .small { color:#555; font-size:0.9rem; }
+    .actions { display:flex; gap:6px; }
+    .btn-ghost { background:transparent; border:1px solid #ddd; color:#333; padding:6px 8px; border-radius:6px; cursor:pointer; }
+    .hint { color:#666; font-size:0.9rem; margin-bottom:8px; }
+  </style>
+</head>
+<body>
+  <h1>Contact Book — Naam, Number, Address</h1>
+  <p class="hint">Naam, number aur address add karo. Search box mein naam type karte hi result dikh jayega. Data tumhare browser mein <strong>localStorage</strong> mein save hota hai.</p>
+
+  <!-- Add contact form -->
+  <form id="addForm">
+    <input id="name" type="text" placeholder="Naam (required)" required />
+    <input id="phone" type="tel" placeholder="Phone number (required)" required />
+    <button type="submit">Add / Update</button>
+    <button type="button" id="clearAll" class="btn-ghost">Clear All</button>
+  </form>
+
+  <textarea id="address" placeholder="Address (optional)"></textarea>
+
+  <!-- Search -->
+  <div class="row">
+    <input id="search" type="text" placeholder="Search by name..." />
+    <div class="small">Matches will show below — click a name to view details.</div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" class="list"></div>
+
+  <script>
+    // Key for localStorage
+    const STORAGE_KEY = 'my_contacts_v1';
+
+    // Helpers
+    function loadContacts() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch(e) { return []; }
+    }
+    function saveContacts(arr) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+    }
+    function normalize(s){ return (s||'').trim().toLowerCase(); }
+
+    // UI elements
+    const addForm = document.getElementById('addForm');
+    const nameInput = document.getElementById('name');
+    const phoneInput = document.getElementById('phone');
+    const addressInput = document.getElementById('address');
+    const searchInput = document.getElementById('search');
+    const results = document.getElementById('results');
+    const clearAllBtn = document.getElementById('clearAll');
+
+    // Initial render
+    let contacts = loadContacts();
+    renderList(contacts);
+
+    // Add / update contact
+    addForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = nameInput.value.trim();
+      const phone = phoneInput.value.trim();
+      const address = addressInput.value.trim();
+
+      if(!name || !phone) {
+        alert('Naam aur Phone number zaroori hain.');
+        return;
+      }
+
+      // If same name exists, update it (case-insensitive)
+      const idx = contacts.findIndex(c => normalize(c.name) === normalize(name));
+      if(idx >= 0){
+        contacts[idx].phone = phone;
+        contacts[idx].address = address;
+        contacts[idx].updatedAt = Date.now();
+      } else {
+        contacts.push({ id: Date.now().toString(), name, phone, address, createdAt: Date.now() });
+      }
+      saveContacts(contacts);
+      renderList(contacts);
+      addForm.reset();
+      addressInput.value = '';
+      nameInput.focus();
+    });
+
+    // Clear all contacts
+    clearAllBtn.addEventListener('click', () => {
+      if(confirm('Sare contacts delete karne hain?')) {
+        contacts = [];
+        saveContacts(contacts);
+        renderList(contacts);
+      }
+    });
+
+    // Live search
+    searchInput.addEventListener('input', () => {
+      const q = normalize(searchInput.value);
+      if(!q) {
+        renderList(contacts);
+        return;
+      }
+      const filtered = contacts.filter(c => normalize(c.name).includes(q));
+      renderList(filtered, q);
+    });
+
+    // Render list of contacts (or filtered subset)
+    function renderList(list, query='') {
+      results.innerHTML = '';
+      if(list.length === 0) {
+        results.innerHTML = '<div class="small">Koi contact nahi mila.</div>';
+        return;
+      }
+      // Sort by name
+      list.sort((a,b) => a.name.localeCompare(b.name));
+      for(const c of list){
+        const card = document.createElement('div');
+        card.className = 'card';
+
+        // Name clickable (shows details) and a small actions area
+        const nameLink = document.createElement('a');
+        nameLink.textContent = c.name;
+        nameLink.href = '#';
+        nameLink.className = 'name-link';
+        nameLink.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          showDetails(c);
+        });
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        // Quick call link (tel:)
+        const callBtn = document.createElement('a');
+        callBtn.textContent = 'Call';
+        callBtn.href = 'tel:' + encodeURIComponent(c.phone);
+        callBtn.className = 'btn-ghost';
+        // Quick copy phone
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy Number';
+        copyBtn.className = 'btn-ghost';
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard?.writeText(c.phone).then(()=> alert('Number copied: ' + c.phone)).catch(()=> alert('Copy failed. Number: ' + c.phone));
+        });
+
+        // Delete button
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.className = 'btn-ghost';
+        delBtn.addEventListener('click', () => {
+          if(confirm('Delete ' + c.name + '?')) {
+            contacts = contacts.filter(x => x.id !== c.id);
+            saveContacts(contacts);
+            renderList(contacts);
+          }
+        });
+
+        // Show snippet: phone & short address
+        const info = document.createElement('div');
+        info.innerHTML = `<div><strong>${escapeHtml(c.phone)}</strong></div>
+                          <div class="small">${escapeHtml(shorten(c.address, 65))}</div>`;
+
+        // Compose card
+        const top = document.createElement('div');
+        top.style.display = 'flex';
+        top.style.justifyContent = 'space-between';
+        top.style.alignItems = 'center';
+        top.appendChild(nameLink);
+
+        const rightActions = document.createElement('div');
+        rightActions.appendChild(callBtn);
+        rightActions.appendChild(copyBtn);
+        rightActions.appendChild(delBtn);
+        rightActions.style.display = 'flex';
+        rightActions.style.gap = '6px';
+        top.appendChild(rightActions);
+
+        card.appendChild(top);
+        card.appendChild(info);
+
+        results.appendChild(card);
+      }
+    }
+
+    // Show details in an alert-like box (simple)
+    function showDetails(c) {
+      const details = `Naam: ${c.name}\nPhone: ${c.phone}\nAddress: ${c.address || '(empty)'}`;
+      // You could replace this with a modal; for simplicity we use prompt-like display
+      alert(details);
+    }
+
+    // Utilities
+    function escapeHtml(s) {
+      if(!s) return '';
+      return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+    }
+    function shorten(s, n) {
+      if(!s) return '';
+      return s.length > n ? s.slice(0,n-1) + '…' : s;
+    }
+
+    // Seed example (optional) — uncomment to pre-fill on first load
+    (function seedIfEmpty(){
+      const had = loadContacts();
+      if(had.length === 0) {
+        contacts = [
+          { id: '1', name: 'Aman Sharma', phone: '+91 98765 43210', address: '123, MG Road, Delhi', createdAt: Date.now() },
+          { id: '2', name: 'Riya Patel', phone: '+91 91234 56789', address: 'Block B, Pune', createdAt: Date.now() }
+        ];
+        saveContacts(contacts);
+        renderList(contacts);
+      }
+    })();
+  </script>
+</body>
+</html>
